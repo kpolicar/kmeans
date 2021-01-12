@@ -18,31 +18,63 @@ import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.*;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 public class Main {
 
+    static Color[] clusterColors;
+    static HashMap<PopulationDataPoint, MyWaypoint> waypoints;
+    private static Random rand;
+
     public static void main(String[] args) {
-        main2(args);
+        rand = new Random();
+        InitMap();
+        ClusterPoints();
     }
 
-    public static PopulationDataPoint[] dataPoints() {
+    private static PopulationDataPoint[] dataPoints() {
         InputStream is = Main.class.getClassLoader().getResourceAsStream("data.json");
         Reader fr = new InputStreamReader(is);
 
         GsonBuilder builder = new GsonBuilder();
-        builder.setPrettyPrinting();
-
         Gson gson = builder.create();
         return gson.fromJson(fr, PopulationDataPoint[].class);
     }
 
-    public static void main2(String[] args)
+    public static void ClusterPoints()
     {
+        var points = waypoints.keySet().stream()
+                .map(dataPoint -> new double[]{ dataPoint.la, dataPoint.lo }).toArray(double[][]::new);
+
+        var dataPoints = new KMeansPlusPlus.Builder(30, points)
+                .iterations(5)
+                .build();
+
+        var assignments = dataPoints.getAssignment();
+        var centroids = dataPoints.getCentroids();
+
+        var i = 0;
+        for (var waypoint : waypoints.keySet()) {
+            var cluster = assignments[i++];
+            waypoints.get(waypoint)
+                    .setColor(clusterColors[cluster]);
+        }
+    }
+
+    public static void InitMap()
+    {
+        waypoints = new HashMap<>();
+        var dataPoints = dataPoints();
+        clusterColors = new Color[100];
+        for (int i = 0; i < 100; i++) {
+            float r = rand.nextFloat();
+            float g = rand.nextFloat();
+            float b = rand.nextFloat();
+            clusterColors[i] = new Color(r, g, b);
+        }
+
         // Create a TileFactoryInfo for OpenStreetMap
         TileFactoryInfo info = new OSMTileFactoryInfo();
         DefaultTileFactory tileFactory = new DefaultTileFactory(info);
@@ -55,14 +87,20 @@ public class Main {
         final JXMapViewer mapViewer = new JXMapViewer();
         mapViewer.setTileFactory(tileFactory);
 
-        List<GeoPosition> dataPointPositions = Arrays
-                .stream(dataPoints())
-                .map(dataPoint -> new GeoPosition(dataPoint.la, dataPoint.lo))
-                .collect(Collectors.toList());
+
+        var clusteredGeoPositions = new ClusteredGeoPosition[dataPoints.length];
+        for (int i = 0; i < dataPoints.length; i++) {
+
+            clusteredGeoPositions[i] = new ClusteredGeoPosition(
+                    0,
+                    new GeoPosition(dataPoints[i].la, dataPoints[i].lo),
+                    false
+            );
+        }
 
         // Set the focus
         mapViewer.setZoom(10);
-        mapViewer.setAddressLocation(dataPointPositions.stream().findFirst().get());
+        mapViewer.setAddressLocation(Arrays.stream(clusteredGeoPositions).findFirst().get().value);
 
         // Add interactions
         MouseInputListener mia = new PanMouseInputListener(mapViewer);
@@ -75,16 +113,18 @@ public class Main {
 
         mapViewer.addKeyListener(new PanKeyListener(mapViewer));
 
-
-        Set<MyWaypoint> waypoints = new HashSet<MyWaypoint>(
-                dataPointPositions
-                        .stream()
-                        .map(geoPosition -> new MyWaypoint(Color.RED, geoPosition))
-                        .collect(Collectors.toList())
-        );
+        List<MyWaypoint> wys =
+                Arrays.stream(clusteredGeoPositions)
+                        .map(geoPosition -> new MyWaypoint(
+                                clusterColors[geoPosition.key],
+                                geoPosition.value))
+                        .collect(Collectors.toList());
+        for (int i = 0; i < dataPoints.length; i++) {
+            waypoints.put(dataPoints[i], wys.get(i));
+        }
 
         WaypointPainter<MyWaypoint> waypointPainter = new WaypointPainter<MyWaypoint>();
-        waypointPainter.setWaypoints(waypoints);
+        waypointPainter.setWaypoints(new HashSet<>(wys));
         waypointPainter.setRenderer(new FancyWaypointRenderer());
         mapViewer.setOverlayPainter(waypointPainter);
 
@@ -95,7 +135,7 @@ public class Main {
         frame.add(new JLabel(text), BorderLayout.NORTH);
         frame.add(mapViewer);
         frame.setSize(800, 600);
-        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         frame.setVisible(true);
 
         mapViewer.addPropertyChangeListener("zoom", new PropertyChangeListener()
@@ -126,5 +166,33 @@ public class Main {
         int zoom = mapViewer.getZoom();
 
         frame.setTitle(String.format("JXMapviewer2 Example 3 (%.2f / %.2f) - Zoom: %d", lat, lon, zoom));
+    }
+
+
+    static final class ClusteredGeoPosition implements Map.Entry<Integer, GeoPosition> {
+        private final Integer key;
+        private GeoPosition value;
+        public boolean isCluster;
+
+        public ClusteredGeoPosition(int key, GeoPosition value, boolean isCluster) {
+            this.key = key;
+            this.value = value;
+            this.isCluster = isCluster;
+        }
+
+        @Override
+        public Integer getKey() {
+            return key;
+        }
+
+        @Override
+        public GeoPosition getValue() {
+            return value;
+        }
+
+        @Override
+        public GeoPosition setValue(GeoPosition value) {
+            return this.value = value;
+        }
     }
 }

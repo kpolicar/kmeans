@@ -9,7 +9,7 @@ import org.jxmapviewer.viewer.GeoPosition;
  */
 public class MyWaypoint extends DefaultWaypoint
 {
-    private final Color color;
+    private Color color;
 
     /**
      * @param color the color
@@ -27,6 +27,12 @@ public class MyWaypoint extends DefaultWaypoint
     public Color getColor()
     {
         return color;
+    }
+
+    public MyWaypoint setColor(Color value)
+    {
+        color = value;
+        return this;
     }
 
 }
