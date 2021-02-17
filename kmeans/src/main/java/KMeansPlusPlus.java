@@ -1,7 +1,6 @@
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class KMeansPlusPlus {
 
@@ -17,6 +16,7 @@ public class KMeansPlusPlus {
     private boolean pp;           // true --> KMeansPlusPlus++. false --> basic random sampling
     private double epsilon;       // stops running when improvement in error < epsilon
     private boolean useEpsilon;   // true  --> stop running when marginal improvement in WCSS < epsilon
+    private boolean inParallel;   // true  --> stop running when marginal improvement in WCSS < epsilon
     // false --> stop running when 0 improvement
     private boolean L1norm;       // true --> L1 norm to calculate distance; false --> L2 norm
 
@@ -53,6 +53,7 @@ public class KMeansPlusPlus {
         pp = builder.pp;
         epsilon = builder.epsilon;
         useEpsilon = builder.useEpsilon;
+        inParallel = builder.inParallel;
         L1norm = builder.L1norm;
 
         // get dimensions to set last 2 fields
@@ -81,6 +82,7 @@ public class KMeansPlusPlus {
         private boolean pp         = true;
         private double epsilon     = .001;
         private boolean useEpsilon = true;
+        private boolean inParallel = true;
         private boolean L1norm = true;
         private List<IterationListener> listeners = new ArrayList<IterationListener>();
 
@@ -157,6 +159,14 @@ public class KMeansPlusPlus {
         }
 
         /**
+         * Sets optional parameter. Default value is true.
+         */
+        public Builder inParallel(boolean inParallel) {
+            this.inParallel = inParallel;
+            return this;
+        }
+
+        /**
          * Sets optional parameter. Default value is true
          */
         public Builder useL1norm(boolean L1norm) {
@@ -181,6 +191,12 @@ public class KMeansPlusPlus {
      * KMeansPlusPlus clustering algorithm
      **********************************************************************/
 
+    class IterationResult {
+        public double[][] centroids;
+        public int[] assignment;
+        public double WCSS;
+    }
+
     /**
      * Run KMeansPlusPlus algorithm
      */
@@ -190,8 +206,48 @@ public class KMeansPlusPlus {
         double[][] bestCentroids = new double[0][0];
         int[] bestAssignment = new int[0];
 
-        // run multiple times and then choose the best run
-        for (int n = 0; n < iterations; n++) {
+        if (iterations > 1) {
+            var results = IntStream.range(0, iterations)
+                    .mapToObj(operand -> new IterationResult())
+                    .collect(Collectors.toList());
+
+            var threads = IntStream.range(0, iterations)
+                    .mapToObj(i -> new Thread(() -> {
+
+                        var singleRun = new Builder(k, points)
+                                .iterations(1)
+                                .useEpsilon(useEpsilon)
+                                .epsilon(epsilon)
+                                .pp(pp)
+                                .inParallel(false)
+                                .useL1norm(L1norm)
+                                .build();
+                        singleRun.run();
+                        results.get(i).centroids = singleRun.getCentroids();
+                        results.get(i).WCSS = singleRun.getWCSS();
+                        results.get(i).assignment = singleRun.getAssignment();
+                    })).collect(Collectors.toList());
+
+            if (inParallel)
+                threads.forEach(Thread::start);
+            else
+                threads.forEach(Thread::run);
+
+            threads.forEach(thread -> {
+                try {
+                    thread.join();
+                } catch (InterruptedException e) {
+                }
+            });
+
+            var bestResult = results.stream()
+                    .min(Comparator.comparing(result -> ((Integer) (int) (result.WCSS * 10000))))
+                    .get();
+
+            WCSS = bestResult.WCSS;
+            centroids = bestResult.centroids;
+            assignment = bestResult.assignment;
+        } else {
             cluster();
 
             // store info if it was the best run so far
@@ -200,12 +256,12 @@ public class KMeansPlusPlus {
                 bestCentroids = centroids;
                 bestAssignment = assignment;
             }
-        }
 
-        // keep info from best run
-        WCSS = bestWCSS;
-        centroids = bestCentroids;
-        assignment = bestAssignment;
+            // keep info from best run
+            WCSS = bestWCSS;
+            centroids = bestCentroids;
+            assignment = bestAssignment;
+        }
     }
 
 

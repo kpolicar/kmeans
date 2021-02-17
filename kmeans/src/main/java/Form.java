@@ -23,6 +23,8 @@ public class Form extends JFrame {
     HashMap<PopulationDataPoint, Waypoint> waypoints;
     HashMap<Integer, Waypoint> centroidWaypoints;
     private JPanel paramPanel;
+    private JPanel runtimePanel;
+    private JLabel runtimeDurationLabel;
 
     private void ResetVars() {
         waypoints = new HashMap<>();
@@ -131,27 +133,33 @@ public class Form extends JFrame {
 
         var clusterIterations = new JSpinner();
         clusterIterations.setPreferredSize(new Dimension(50, clusterIterations.getPreferredSize().height));
-        clusterIterations.setValue(1);
+        clusterIterations.setValue(500);
 
         var useKMeansPlusPlus = new JCheckBox("Use k-means++ Initialization", true);
+        var runInParallel = new JCheckBox("Run in Parallel", true);
 
         var clusterActionButton = new JButton("Run");
         clusterActionButton.addActionListener(e -> {
             clusterActionButton.setEnabled(false);
             Thread t1 = new Thread(() -> {
-                System.out.println((Integer) clusterIterations.getValue());
-                System.out.println((Integer) clusterAmount.getValue());
-                System.out.println((Double) epsilonAmount.getValue());
-                System.out.println(useKMeansPlusPlus.isSelected());
                 clusterActionButton.setEnabled(false);
+
+                runtimeDurationLabel.setText("");
+                var start = System.currentTimeMillis();
+
                 ClusterPoints(
                         (Integer) clusterIterations.getValue(),
                         (Integer) clusterAmount.getValue(),
                         (Double) epsilonAmount.getValue(),
                         useKMeansPlusPlus.isSelected(),
-                        (Integer) delayAmount.getValue()
+                        (Integer) delayAmount.getValue(),
+                        runInParallel.isSelected()
                 );
                 clusterActionButton.setEnabled(true);
+
+                var end = System.currentTimeMillis() - start;
+                System.out.println("Runtime: "+end+"ms");
+                runtimeDurationLabel.setText(end+"ms");
             });
             t1.start();
         });
@@ -168,13 +176,20 @@ public class Form extends JFrame {
         paramPanel.add(clusterActionButton);
         paramPanel.add(new JLabel("Delay"));
         paramPanel.add(delayAmount);
+        paramPanel.add(runInParallel);
+
+        runtimePanel = new JPanel();
+        runtimeDurationLabel = new JLabel();
+        runtimePanel.add(runtimeDurationLabel);
+
 
 
         add(paramPanel, BorderLayout.NORTH);
+        add(runtimePanel, BorderLayout.SOUTH);
         add(mapViewer);
     }
 
-    public void ClusterPoints(int iterations, int clusters, double epsilon, boolean useKmeansPlusPlus, int delay)
+    public void ClusterPoints(int iterations, int clusters, double epsilon, boolean useKmeansPlusPlus, int delay, boolean runInParallel)
     {
         centroidWaypoints.clear();
         var points = waypoints.keySet().stream()
@@ -182,8 +197,10 @@ public class Form extends JFrame {
 
         var dataPoints = new KMeansPlusPlus.Builder(clusters, points)
                 .iterations(iterations)
+                .useEpsilon(epsilon != 0)
                 .epsilon(epsilon)
                 .pp(useKmeansPlusPlus)
+                .inParallel(runInParallel)
                 .listen(result -> {
                     var assignments = result.getAssignment();
 
