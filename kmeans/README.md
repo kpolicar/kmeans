@@ -20,3 +20,10 @@ Upam, da sem približno jasno napisal.
 
 *Epsilon* je vrednost med 0 in 1. Če jo nastavite na 0, se bo algoritem izvajal
 do popolne konvergence.
+
+# Update 1
+
+Spremembe od zadnjič
+- opcija za zagon na večih niti (paralelno izvajanje) - vsaka iteracija na svoji niti
+  => izberi najboljšo iteracijo
+- števec za čas izvajanja - primerjava paralelno
