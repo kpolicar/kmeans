@@ -1,5 +1,4 @@
 import java.awt.Color;
-import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
@@ -16,7 +15,7 @@ import org.jxmapviewer.viewer.WaypointRenderer;
  * A fancy waypoint painter
  * @author Martin Steiger
  */
-public class FancyWaypointRenderer implements WaypointRenderer<MyWaypoint>
+public class FancyWaypointRenderer implements WaypointRenderer<Waypoint>
 {
     private final Map<Color, BufferedImage> map = new HashMap<Color, BufferedImage>();
 
@@ -62,7 +61,7 @@ public class FancyWaypointRenderer implements WaypointRenderer<MyWaypoint>
     }
 
     @Override
-    public void paintWaypoint(Graphics2D g, JXMapViewer viewer, MyWaypoint w)
+    public void paintWaypoint(Graphics2D g, JXMapViewer viewer, Waypoint w)
     {
         g = (Graphics2D)g.create();
 

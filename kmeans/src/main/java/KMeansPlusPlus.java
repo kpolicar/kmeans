@@ -1,5 +1,6 @@
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Random;
 
 public class KMeansPlusPlus {
@@ -37,16 +38,11 @@ public class KMeansPlusPlus {
      **********************************************************************/
 
     /**
-     * Empty constructor is private to ensure that clients have to use the 
-     * Builder inner class to create a KMeansPlusPlus object.
-     */
-    private KMeansPlusPlus() {}
-
-    /**
      * The proper way to construct a KMeansPlusPlus object: from an inner class object.
      * @param builder See inner class named Builder
      */
-    private KMeansPlusPlus(Builder builder) {
+    private KMeansPlusPlus(Builder builder, List<IterationListener> listeners) {
+        this.listeners = listeners;
         // start timing
         start = System.currentTimeMillis();
 
@@ -86,6 +82,7 @@ public class KMeansPlusPlus {
         private double epsilon     = .001;
         private boolean useEpsilon = true;
         private boolean L1norm = true;
+        private List<IterationListener> listeners = new ArrayList<IterationListener>();
 
         /**
          * Sets required parameters and checks that are a sufficient # of distinct
@@ -114,6 +111,11 @@ public class KMeansPlusPlus {
 
             this.k = k;
             this.points = points;
+        }
+
+        public Builder listen(IterationListener listener) {
+            this.listeners.add(listener);
+            return this;
         }
 
 
@@ -166,10 +168,14 @@ public class KMeansPlusPlus {
          * Build a KMeansPlusPlus object
          */
         public KMeansPlusPlus build() {
-            return new KMeansPlusPlus(this);
+            return new KMeansPlusPlus(this, listeners);
         }
     }
 
+    interface IterationListener {
+        void OnRun(KMeansPlusPlus kMeansPlusPlus);
+    }
+    private List<IterationListener> listeners;
 
     /***********************************************************************
      * KMeansPlusPlus clustering algorithm
@@ -218,6 +224,9 @@ public class KMeansPlusPlus {
 
             prevWCSS = WCSS;    // check if cost function meets stopping criteria
             calcWCSS();
+
+            for (IterationListener hl : listeners)
+                hl.OnRun(this);
         } while (!stop(prevWCSS));
     }
 
