@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="MPJ" type="Application" factoryName="Application">
+    <option name="ALTERNATIVE_JRE_PATH" value="openjdk-15" />
+    <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
+    <envs>
+      <env name="MPJ_HOME" value="C:\mpj" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="MPIMain" />
+    <module name="kmeans" />
+    <option name="VM_PARAMETERS" value="-jar C:\mpj\lib\starter.jar -np 10" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
