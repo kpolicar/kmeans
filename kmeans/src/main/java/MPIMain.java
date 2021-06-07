@@ -1,5 +1,6 @@
 import mpi.MPI;
 
+import javax.swing.*;
 import java.nio.CharBuffer;
 import java.util.Arrays;
 
@@ -16,6 +17,12 @@ public class MPIMain {
         var buffer = buff.array();
 
         if (me == 0) {
+
+            var form = new Form(LoadDataPointsFromFileSystem.dataPoints());
+            form.setVisible(true);
+            form.setSize(800, 600);
+            form.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+
             for (int i = 1; i < size; i++) {
                 MPI.COMM_WORLD.Recv(buffer, 0, buffer_len, MPI.CHAR, MPI.ANY_SOURCE, MPI.ANY_TAG);
                 System.out.println("received "+ Arrays.toString(buffer));
@@ -26,5 +33,9 @@ public class MPIMain {
         }
 
         MPI.Finalize();
+    }
+
+    protected static void Calc() {
+
     }
 }

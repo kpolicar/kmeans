@@ -15,16 +15,23 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class Form extends JFrame {
+public class Form extends JFrame implements CalculateKMeans {
 
     private final JXMapViewer mapViewer;
     private final Random rand = new Random();
+    private CalculateKMeans algorithm;
     Color[] clusterColors;
     HashMap<PopulationDataPoint, Waypoint> waypoints;
     HashMap<Integer, Waypoint> centroidWaypoints;
     private JPanel paramPanel;
     private JPanel runtimePanel;
     private JLabel runtimeDurationLabel;
+    private JSpinner clusterAmount;
+    private JCheckBox runInParallel;
+    private JCheckBox useKMeansPlusPlus;
+    private JSpinner clusterIterations;
+    private JSpinner epsilonAmount;
+    private JSpinner delayAmount;
 
     private void ResetVars() {
         waypoints = new HashMap<>();
@@ -105,6 +112,7 @@ public class Form extends JFrame {
     }
 
     public Form(PopulationDataPoint[] dataPoints) {
+        this.algorithm = this;
         setLayout(new BorderLayout());
         ResetVars();
         mapViewer = new JXMapViewer();
@@ -116,27 +124,32 @@ public class Form extends JFrame {
         updateWindowTitle(mapViewer);
     }
 
+    public Form(PopulationDataPoint[] dataPoints, CalculateKMeans algorithm) {
+        this(dataPoints);
+        this.algorithm = algorithm;
+    }
+
     private void CreateFields() {
-        var clusterAmount = new JSpinner();
+        clusterAmount = new JSpinner();
         clusterAmount.setPreferredSize(new Dimension(50, clusterAmount.getPreferredSize().height));
         clusterAmount.setValue(5);
 
         var delayModel = new SpinnerNumberModel(0, 0, 1500, 100);
-        var delayAmount = new JSpinner(delayModel);
+        delayAmount = new JSpinner(delayModel);
         delayAmount.setPreferredSize(new Dimension(50, clusterAmount.getPreferredSize().height));
         delayAmount.setValue(500);
 
         var epsilonModel = new SpinnerNumberModel(0d, 0d, 0.1d, 0.001d);
-        var epsilonAmount = new JSpinner(epsilonModel);
+        epsilonAmount = new JSpinner(epsilonModel);
         epsilonAmount.setPreferredSize(new Dimension(60, clusterAmount.getPreferredSize().height));
         epsilonAmount.setValue(0.001);
 
-        var clusterIterations = new JSpinner();
+        clusterIterations = new JSpinner();
         clusterIterations.setPreferredSize(new Dimension(50, clusterIterations.getPreferredSize().height));
         clusterIterations.setValue(500);
 
-        var useKMeansPlusPlus = new JCheckBox("Use k-means++ Initialization", true);
-        var runInParallel = new JCheckBox("Run in Parallel", true);
+        useKMeansPlusPlus = new JCheckBox("Use k-means++ Initialization", true);
+        runInParallel = new JCheckBox("Run in Parallel", true);
 
         var clusterActionButton = new JButton("Run");
         clusterActionButton.addActionListener(e -> {
@@ -147,14 +160,7 @@ public class Form extends JFrame {
                 runtimeDurationLabel.setText("");
                 var start = System.currentTimeMillis();
 
-                ClusterPoints(
-                        (Integer) clusterIterations.getValue(),
-                        (Integer) clusterAmount.getValue(),
-                        (Double) epsilonAmount.getValue(),
-                        useKMeansPlusPlus.isSelected(),
-                        (Integer) delayAmount.getValue(),
-                        runInParallel.isSelected()
-                );
+                ClusterPoints();
                 clusterActionButton.setEnabled(true);
 
                 var end = System.currentTimeMillis() - start;
@@ -189,36 +195,13 @@ public class Form extends JFrame {
         add(mapViewer);
     }
 
-    public void ClusterPoints(int iterations, int clusters, double epsilon, boolean useKmeansPlusPlus, int delay, boolean runInParallel)
+    public void ClusterPoints()
     {
         centroidWaypoints.clear();
         var points = waypoints.keySet().stream()
                 .map(dataPoint -> new double[]{ dataPoint.la, dataPoint.lo }).toArray(double[][]::new);
 
-        var dataPoints = new KMeansPlusPlus.Builder(clusters, points)
-                .iterations(iterations)
-                .useEpsilon(epsilon != 0)
-                .epsilon(epsilon)
-                .pp(useKmeansPlusPlus)
-                .inParallel(runInParallel)
-                .listen(result -> {
-                    var assignments = result.getAssignment();
-
-                    var i = 0;
-                    for (var waypoint : waypoints.keySet()) {
-                        var cluster = assignments[i++];
-                        waypoints.get(waypoint)
-                                .setColor(clusterColors[cluster]);
-                    }
-
-                    mapViewer.repaint();
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                })
-                .build();
+        var dataPoints = algorithm.Calc(points);
 
         var assignments = dataPoints.getAssignment();
         var centroids = dataPoints.getCentroids();
@@ -231,5 +214,33 @@ public class Form extends JFrame {
         }
 
         mapViewer.repaint();
+    }
+
+    @Override
+    public KMeansPlusPlus Calc(double[][] points) {
+        return new KMeansPlusPlus.Builder((int) clusterAmount.getValue(), points)
+                .iterations((int) clusterIterations.getValue())
+                .useEpsilon(((double) epsilonAmount.getValue()) != 0d)
+                .epsilon((double) epsilonAmount.getValue())
+                .pp(useKMeansPlusPlus.isSelected())
+                .inParallel(runInParallel.isSelected())
+                .listen(result -> {
+                    var assignments = result.getAssignment();
+
+                    var i = 0;
+                    for (var waypoint : waypoints.keySet()) {
+                        var cluster = assignments[i++];
+                        waypoints.get(waypoint)
+                                .setColor(clusterColors[cluster]);
+                    }
+
+                    mapViewer.repaint();
+                    try {
+                        Thread.sleep((int)delayAmount.getValue());
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                })
+                .build();
     }
 }
