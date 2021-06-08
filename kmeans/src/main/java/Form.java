@@ -1,3 +1,4 @@
+import mpi.MPI;
 import org.jxmapviewer.JXMapViewer;
 import org.jxmapviewer.OSMTileFactoryInfo;
 import org.jxmapviewer.cache.FileBasedLocalCache;
@@ -15,29 +16,31 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class Form extends JFrame implements CalculateKMeans {
+public class Form extends JFrame {
 
     private final JXMapViewer mapViewer;
     private final Random rand = new Random();
-    private CalculateKMeans algorithm;
+    private final boolean useMPI;
+    private final PopulationDataPoint[] DataPoints;
     Color[] clusterColors;
     HashMap<PopulationDataPoint, Waypoint> waypoints;
     HashMap<Integer, Waypoint> centroidWaypoints;
     private JPanel paramPanel;
     private JPanel runtimePanel;
     private JLabel runtimeDurationLabel;
-    private JSpinner clusterAmount;
-    private JCheckBox runInParallel;
-    private JCheckBox useKMeansPlusPlus;
-    private JSpinner clusterIterations;
-    private JSpinner epsilonAmount;
-    private JSpinner delayAmount;
+
+    public JSpinner clusterAmount;
+    public JCheckBox runInParallel;
+    public JCheckBox useKMeansPlusPlus;
+    public JSpinner clusterIterations;
+    public JSpinner epsilonAmount;
+    public JSpinner delayAmount;
 
     private void ResetVars() {
         waypoints = new HashMap<>();
         centroidWaypoints = new HashMap<>();
-        clusterColors = new Color[100];
-        for (int i = 0; i < 100; i++) {
+        clusterColors = new Color[1000];
+        for (int i = 0; i < clusterColors.length; i++) {
             float r = rand.nextFloat();
             float g = rand.nextFloat();
             float b = rand.nextFloat();
@@ -111,8 +114,8 @@ public class Form extends JFrame implements CalculateKMeans {
         }
     }
 
-    public Form(PopulationDataPoint[] dataPoints) {
-        this.algorithm = this;
+    public Form(PopulationDataPoint[] dataPoints, boolean useMPI) {
+        DataPoints = dataPoints;
         setLayout(new BorderLayout());
         ResetVars();
         mapViewer = new JXMapViewer();
@@ -122,11 +125,14 @@ public class Form extends JFrame implements CalculateKMeans {
         CreateFields();
 
         updateWindowTitle(mapViewer);
-    }
-
-    public Form(PopulationDataPoint[] dataPoints, CalculateKMeans algorithm) {
-        this(dataPoints);
-        this.algorithm = algorithm;
+        this.useMPI = useMPI;
+        if (useMPI) {
+            clusterIterations.setValue(MPI.COMM_WORLD.Size()-1);
+            clusterIterations.setEnabled(false);
+            runInParallel.setEnabled(false);
+            delayAmount.setEnabled(false);
+            delayAmount.setValue(0);
+        }
     }
 
     private void CreateFields() {
@@ -198,40 +204,41 @@ public class Form extends JFrame implements CalculateKMeans {
     public void ClusterPoints()
     {
         centroidWaypoints.clear();
-        var points = waypoints.keySet().stream()
-                .map(dataPoint -> new double[]{ dataPoint.la, dataPoint.lo }).toArray(double[][]::new);
+        var points = Arrays.stream(DataPoints)
+            .map(dataPoint -> new double[]{ dataPoint.la, dataPoint.lo })
+            .toArray(double[][]::new);
 
-        var dataPoints = algorithm.Calc(points);
+        var dataPoints = Calc(points);
 
         var assignments = dataPoints.getAssignment();
         var centroids = dataPoints.getCentroids();
 
         var i = 0;
-        for (var waypoint : waypoints.keySet()) {
+        for (var point : DataPoints) {
             var cluster = assignments[i++];
-            waypoints.get(waypoint)
-                    .setColor(clusterColors[cluster]);
+            var waypoint = waypoints.get(point);
+            waypoint.setColor(clusterColors[cluster]);
         }
 
         mapViewer.repaint();
     }
 
-    @Override
     public KMeansPlusPlus Calc(double[][] points) {
         return new KMeansPlusPlus.Builder((int) clusterAmount.getValue(), points)
                 .iterations((int) clusterIterations.getValue())
                 .useEpsilon(((double) epsilonAmount.getValue()) != 0d)
                 .epsilon((double) epsilonAmount.getValue())
+                .mpi(useMPI)
                 .pp(useKMeansPlusPlus.isSelected())
                 .inParallel(runInParallel.isSelected())
                 .listen(result -> {
                     var assignments = result.getAssignment();
 
                     var i = 0;
-                    for (var waypoint : waypoints.keySet()) {
+                    for (var point : DataPoints) {
                         var cluster = assignments[i++];
-                        waypoints.get(waypoint)
-                                .setColor(clusterColors[cluster]);
+                        var waypoint = waypoints.get(point);
+                        waypoint.setColor(clusterColors[cluster]);
                     }
 
                     mapViewer.repaint();

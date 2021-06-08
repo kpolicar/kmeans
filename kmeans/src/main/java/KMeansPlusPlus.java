@@ -1,8 +1,11 @@
+import mpi.MPI;
+
+import java.io.Serializable;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-public class KMeansPlusPlus {
+public class KMeansPlusPlus implements Serializable {
 
     /***********************************************************************
      * Data structures
@@ -16,7 +19,8 @@ public class KMeansPlusPlus {
     private boolean pp;           // true --> KMeansPlusPlus++. false --> basic random sampling
     private double epsilon;       // stops running when improvement in error < epsilon
     private boolean useEpsilon;   // true  --> stop running when marginal improvement in WCSS < epsilon
-    private boolean inParallel;   // true  --> stop running when marginal improvement in WCSS < epsilon
+    private boolean mpi;
+    private boolean inParallel;
     // false --> stop running when 0 improvement
     private boolean L1norm;       // true --> L1 norm to calculate distance; false --> L2 norm
 
@@ -54,6 +58,7 @@ public class KMeansPlusPlus {
         epsilon = builder.epsilon;
         useEpsilon = builder.useEpsilon;
         inParallel = builder.inParallel;
+        mpi = builder.mpi;
         L1norm = builder.L1norm;
 
         // get dimensions to set last 2 fields
@@ -83,6 +88,7 @@ public class KMeansPlusPlus {
         private double epsilon     = .001;
         private boolean useEpsilon = true;
         private boolean inParallel = true;
+        private boolean mpi = false;
         private boolean L1norm = true;
         private List<IterationListener> listeners = new ArrayList<IterationListener>();
 
@@ -166,6 +172,11 @@ public class KMeansPlusPlus {
             return this;
         }
 
+        public Builder mpi(boolean mpi) {
+            this.mpi = mpi;
+            return this;
+        }
+
         /**
          * Sets optional parameter. Default value is true
          */
@@ -206,6 +217,63 @@ public class KMeansPlusPlus {
         double[][] bestCentroids = new double[0][0];
         int[] bestAssignment = new int[0];
 
+
+
+        if (mpi) {
+            var mpiWorkerCount = MPI.COMM_WORLD.Size();
+
+            for (int i=1; i<mpiWorkerCount;i++) {
+                boolean[] requestData = new boolean[] {true};
+                MPI.COMM_WORLD.Send(requestData, 0, requestData.length, MPI.BOOLEAN, i, 50);
+            }
+
+            for (int i=1; i<mpiWorkerCount;i++) {
+
+                var config = new KMeansPlusPlusConfiguration();
+                config.pp = pp;
+                config.epsilon = epsilon;
+                config.useEpsilon = useEpsilon;
+                config.L1norm = L1norm;
+                config.k = k;
+
+                var data = new KMeansPlusPlusConfiguration[] {config};
+                int[] count = new int[] {data.length};
+                MPI.COMM_WORLD.Send(count, 0, count.length, MPI.INT, i, 100);
+                MPI.COMM_WORLD.Send(data, 0, count[0], MPI.OBJECT, i, 99);
+            }
+            int bestWCSSIndex = 1;
+            for (int i=1; i<mpiWorkerCount;i++) {
+                double[] WCSS = new double[1];
+                MPI.COMM_WORLD.Recv(WCSS, 0, WCSS.length, MPI.DOUBLE, i, 98);
+                if (WCSS[0] < bestWCSS) {
+                    bestWCSS = WCSS[0];
+                    bestWCSSIndex = i;
+                }
+            }
+            for (int i=1; i<mpiWorkerCount;i++) {
+                boolean[] requestData = new boolean[] {i == bestWCSSIndex};
+                MPI.COMM_WORLD.Send(requestData, 0, requestData.length, MPI.BOOLEAN, i, 97);
+            }
+
+            int[] count = new int[1];
+            TwoDimensionalDoubleArray[] centroidsData = new TwoDimensionalDoubleArray[1];
+            MPI.COMM_WORLD.Recv(count, 0, 1, MPI.INT, bestWCSSIndex, 96);
+            MPI.COMM_WORLD.Recv(centroidsData, 0, count[0], MPI.OBJECT, bestWCSSIndex, 95);
+
+            bestCentroids = centroidsData[0].Array;
+
+            int[] countAssignments = new int[1];
+            MPI.COMM_WORLD.Recv(countAssignments, 0, 1, MPI.INT, bestWCSSIndex, 94);
+            bestAssignment = new int[countAssignments[0]];
+            MPI.COMM_WORLD.Recv(bestAssignment, 0, bestAssignment.length, MPI.INT, bestWCSSIndex, 93);
+
+            WCSS = bestWCSS;
+            centroids = bestCentroids;
+            assignment = bestAssignment;
+            return;
+        }
+
+
         if (iterations > 1) {
             var results = IntStream.range(0, iterations)
                     .mapToObj(operand -> new IterationResult())
@@ -219,6 +287,7 @@ public class KMeansPlusPlus {
                                 .useEpsilon(useEpsilon)
                                 .epsilon(epsilon)
                                 .pp(pp)
+                                .mpi(false)
                                 .inParallel(false)
                                 .useL1norm(L1norm)
                                 .build();
@@ -227,18 +296,18 @@ public class KMeansPlusPlus {
                         results.get(i).WCSS = singleRun.getWCSS();
                         results.get(i).assignment = singleRun.getAssignment();
                     })).collect(Collectors.toList());
-
             if (inParallel)
                 threads.forEach(Thread::start);
             else
                 threads.forEach(Thread::run);
-
             threads.forEach(thread -> {
                 try {
                     thread.join();
                 } catch (InterruptedException e) {
                 }
             });
+
+
 
             var bestResult = results.stream()
                     .min(Comparator.comparing(result -> ((Integer) (int) (result.WCSS * 10000))))
@@ -281,8 +350,9 @@ public class KMeansPlusPlus {
             prevWCSS = WCSS;    // check if cost function meets stopping criteria
             calcWCSS();
 
-            for (IterationListener hl : listeners)
+            for (IterationListener hl : listeners) {
                 hl.OnRun(this);
+            }
         } while (!stop(prevWCSS));
     }
 
